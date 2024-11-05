@@ -1,5 +1,5 @@
 // js/VisualizationManager.js
-const MAX_PARTICLES = 150; // Reduce from 200 to 150 for better performance
+const MAX_PARTICLES = 200; // Reduce from 200 to 150 for better performance
 
 class VisualizationManager {
   constructor() {
@@ -39,6 +39,12 @@ class VisualizationManager {
     this.expectedBPM = 140; // Known BPM of the track
     this.bpmTolerance = 5;  // Allow +/- 5 BPM variance
 
+    this.volumeHistory = [];
+    this.shootingStarsActive = false;
+    this.shootingStars = [];
+    this.MAX_SHOOTING_STARS = 20;
+    this.songStartTime = null;
+
     this.initializeVisualElements();
   }
 
@@ -64,6 +70,13 @@ class VisualizationManager {
       const bar = new AudioBar(i, this.NUM_BARS);
       bar.initialize();
       this.audioBars.push(bar);
+    }
+
+    // Initialize shooting stars
+    for (let i = 0; i < this.MAX_SHOOTING_STARS; i++) {
+      const star = new ShootingStar();
+      star.initialize();
+      this.shootingStars.push(star);
     }
 
     this.bassRing = new BassRing();
@@ -168,6 +181,18 @@ class VisualizationManager {
       }
       return null;
   }
+
+  checkShootingStarTiming() {
+    if (!this.songStartTime && audioSource === 'mp3') {
+      this.songStartTime = millis();
+    }
+
+    if (this.songStartTime) {
+      const currentTime = millis();
+      const elapsedSeconds = (currentTime - this.songStartTime) / 1000;
+      this.shootingStarsActive = elapsedSeconds >= 34.5;
+    }
+  }  
   
 
   update(fft) {
@@ -177,32 +202,25 @@ class VisualizationManager {
     
     const peak = this.detectPeaks(currentSpectrum);
     
-    // Enhanced kick detection
     this.lastKickEnergy = this.kickEnergy;
-    this.kickEnergy = fft.getEnergy(50, 100);  // Kick frequency range
-
+    this.kickEnergy = fft.getEnergy(50, 100);
+  
     this.kickThreshold = this.calibrateKickThreshold(this.kickEnergy);
-
-    // Update kick history
+  
     this.kickHistory.push(this.kickEnergy);
     this.kickHistory.shift();
-
-    // Update peak energy
+  
     if (this.kickEnergy > this.peakKickEnergy) {
-        this.peakKickEnergy = this.kickEnergy;
+      this.peakKickEnergy = this.kickEnergy;
     }
-
-    // Calculate average kick energy
-    // Safe array reduction with initial value
+  
     const avgKickEnergy = this.kickHistory.length ? 
       this.kickHistory.reduce((a, b) => a + b, 0) / this.kickHistory.length : 
       0;
-
-    // Detect kick
+  
     const isKick = this.kickEnergy > this.kickThreshold && 
                    this.kickEnergy > this.lastKickEnergy;
-
-    // Update kick timing data
+  
     if (isKick) {
       const currentTime = millis();
       if (this.lastKickTime > 0) {
@@ -213,18 +231,18 @@ class VisualizationManager {
         }
         this.averageKickInterval = this.lastKickIntervals.length ?
           this.lastKickIntervals.reduce((a, b) => a + b, 0) / this.lastKickIntervals.length :
-          429; // Default to ~140 BPM
+          429;
       }
       this.lastKickTime = currentTime;
       this.kickCount++;
     }
     
-    // Update smoothed spectrum
     for (let i = 0; i < this.NUM_BANDS; i++) {
       this.smoothedSpectrum[i] = lerp(this.smoothedSpectrum[i], currentSpectrum[i], 0.3);
     }
+  
+    this.checkShootingStarTiming();
     
-    // Update visualizations
     this.radialBands.forEach((band, i) => {
       band.update(this.smoothedSpectrum[i], peak, this.globalSpeed, this.kickEnergy);
     });
@@ -232,6 +250,12 @@ class VisualizationManager {
     this.glowParticles.forEach(particle => {
       particle.update(this.kickEnergy, this.globalSpeed, this.globalHue);
     });
+  
+    if (this.shootingStarsActive) {
+      this.shootingStars.forEach(star => {
+        star.update(this.kickEnergy, this.globalSpeed, this.globalHue);
+      });
+    }
   
     this.audioBars.forEach((bar, i) => {
       let index = floor(map(i, 0, this.audioBars.length, 0, currentSpectrum.length));
@@ -247,45 +271,48 @@ class VisualizationManager {
       highEnergy,
       isKick,
       kickStats: {
-          currentEnergy: this.kickEnergy,
-          threshold: this.kickThreshold,
-          peakEnergy: this.peakKickEnergy,
-          averageEnergy: avgKickEnergy,
-          isKick: isKick,
-          kickCount: this.kickCount,
-          averageInterval: this.averageKickInterval,
-          recentHistory: [...this.kickHistory].slice(-5)  // Last 5 values
+        currentEnergy: this.kickEnergy,
+        threshold: this.kickThreshold,
+        peakEnergy: this.peakKickEnergy,
+        averageEnergy: avgKickEnergy,
+        isKick: isKick,
+        kickCount: this.kickCount,
+        averageInterval: this.averageKickInterval,
+        recentHistory: [...this.kickHistory].slice(-5)
       }
     };
-  }
+  }  
   
-  draw(bassEnergy) {  // Add bassEnergy parameter
-      // Central glow
-      drawingContext.shadowBlur = map(bassEnergy, 0, 255, 30, 60);
-      drawingContext.shadowColor = color(this.globalHue, 100, 100).toString();
-      fill(this.globalHue, 100, 100, 0.1);
-      circle(0, 0, MIN_RADIUS * 2);
-      drawingContext.shadowBlur = 0;
-
-      push();
-      this.radialBands.forEach(band => band.draw(this.globalHue, bassEnergy));
-      pop();
-
-      this.glowParticles.forEach(particle => particle.draw(bassEnergy));
-
-      push();
-      fill(0, 0, 0, 0.2);
-      noStroke();
-      circle(0, 0, MIN_RADIUS * 2);
-      pop();
-
-      let baseScale = map(bassEnergy, 0, 255, 0.1, 1.5);
-      push();
-      scale(baseScale);
-      this.audioBars.forEach(bar => bar.draw(bassEnergy));
-      this.bassRing.draw(bassEnergy, this.globalHue); // Pass globalHue
-      pop();
-}
+  draw(bassEnergy) {
+    drawingContext.shadowBlur = map(bassEnergy, 0, 255, 30, 60);
+    drawingContext.shadowColor = color(this.globalHue, 100, 100).toString();
+    fill(this.globalHue, 100, 100, 0.1);
+    circle(0, 0, MIN_RADIUS * 2);
+    drawingContext.shadowBlur = 0;
+  
+    push();
+    this.radialBands.forEach(band => band.draw(this.globalHue, bassEnergy));
+    pop();
+  
+    this.glowParticles.forEach(particle => particle.draw(bassEnergy));
+  
+    if (this.shootingStarsActive) {
+      this.shootingStars.forEach(star => star.draw(bassEnergy));
+    }
+  
+    push();
+    fill(0, 0, 0, 0.2);
+    noStroke();
+    circle(0, 0, MIN_RADIUS * 2);
+    pop();
+  
+    let baseScale = map(bassEnergy, 0, 255, 0.1, 1.5);
+    push();
+    scale(baseScale);
+    this.audioBars.forEach(bar => bar.draw(bassEnergy));
+    this.bassRing.draw(bassEnergy, this.globalHue);
+    pop();
+  }
     
 
   getDebugInfo() {
