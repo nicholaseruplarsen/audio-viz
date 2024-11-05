@@ -14,12 +14,13 @@ class AudioBar {
 
   initialize() {
     this.width = (MIN_RADIUS * 2) / this.total;
-    this.x = -MIN_RADIUS + (this.width * this.index);
+    // Center the bars by adjusting the x position calculation
+    this.x = (this.index - (this.total - 1) / 2) * this.width;
   }
 
-  updateSensitivity(sensitivity, bassEnergy, globalHue) { // Add globalHue parameter
-    let distanceFromCenter = Math.abs(this.index - this.total/2);
-    let scaleFactor = 1 - (distanceFromCenter / (this.total/2));
+  updateSensitivity(sensitivity, bassEnergy, globalHue) {
+    let distanceFromCenter = Math.abs(this.index - (this.total - 1) / 2);
+    let scaleFactor = 1 - (distanceFromCenter / ((this.total - 1) / 2));
     scaleFactor = pow(scaleFactor, 1.5);
 
     this.targetHeight = map(sensitivity, 0, 255, 0, MIN_RADIUS) * scaleFactor;
@@ -49,18 +50,9 @@ class AudioBar {
     drawingContext.shadowBlur = glowSize;
     drawingContext.shadowColor = adjustedColor.toString();
 
-    drawingContext.shadowBlur = map(bassEnergy, 0, 255, 0, 15);
-    drawingContext.shadowColor = color(0, 0, 100).toString();
+    // Center the rectangle on the calculated x position
+    rect(this.x - (this.width * 0.6) / 2, -this.height / 2, this.width * 0.6, this.height);
 
-    drawingContext.save();
-    drawingContext.beginPath();
-    drawingContext.arc(0, 0, MIN_RADIUS, 0, TWO_PI);
-    drawingContext.clip();
-
-    const centerOffset = this.width;
-    rect(this.x - centerOffset, -this.height/2, this.width * 0.6, this.height);
-
-    drawingContext.restore();
     drawingContext.shadowBlur = 0;
     pop();
   }

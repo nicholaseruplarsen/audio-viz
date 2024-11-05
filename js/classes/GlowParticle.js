@@ -31,22 +31,22 @@ class GlowParticle {
     );
   }
 
-  draw(bassEnergy) {
+  draw(kickEnergy) {  // Change parameter from bassEnergy to kickEnergy
     let x = cos(this.angle) * this.radius;
     let y = sin(this.angle) * this.radius;
 
-    let whiteness = map(bassEnergy, 0, 255, 0, 80);
+    let whiteness = map(kickEnergy, 0, 255, 0, 80);  // Use kickEnergy
     let adjustedColor = color(
       hue(this.color),
       saturation(this.color) - whiteness,
       100
     );
 
-    let bassGlow = map(bassEnergy, 0, 255, this.size, this.size * 3);
-    drawingContext.shadowBlur = bassGlow;
+    let kickGlow = map(kickEnergy, 0, 255, this.size, this.size * 3);  // Use kickEnergy
+    drawingContext.shadowBlur = kickGlow;
     drawingContext.shadowColor = adjustedColor.toString();
 
-    let bassAlpha = map(bassEnergy, 0, 255, this.alpha, min(1, this.alpha * 1.5));
+    let kickAlpha = map(kickEnergy, 0, 255, this.alpha, min(1, this.alpha * 1.5));  // Use kickEnergy
     fill(adjustedColor);
     noStroke();
     circle(x, y, this.size);

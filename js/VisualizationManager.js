@@ -18,7 +18,11 @@ class VisualizationManager {
     this.globalHue = 120;
     this.globalSpeed = 1;
     this.volumeAccumulator = 0;
-    
+
+    this.kickThreshold = 150;
+    this.kickEnergy = 0;
+    this.lastKickEnergy = 0;
+
     this.initializeVisualElements();
   }
 
@@ -67,59 +71,63 @@ class VisualizationManager {
     return average > recentAverage * 1.5;
   }
 
-  updateGlobalEffects(volume) {
-    let targetSpeed = map(volume, 0, 255, 0.5, 4);
+  updateGlobalEffects(spectrum) {
+    let sum = 0;
+    for (let i = 0; i < spectrum.length; i++) {
+      sum += spectrum[i];
+    }
+    let average = sum / spectrum.length;
+
+    let targetSpeed = map(average, 0, 255, 0.5, 4);
     this.globalSpeed = lerp(this.globalSpeed, targetSpeed, 0.1);
     this.globalHue = (this.globalHue + 0.5 * this.globalSpeed) % 360;
-  }
+
+    this.volumeAccumulator = lerp(this.volumeAccumulator, average, 0.1);
+  }  
 
   update(fft) {
-      const currentSpectrum = fft.analyze();
-      const bassEnergy = fft.getEnergy("bass");
-      const highEnergy = fft.getEnergy("treble");
-      const peak = this.detectPeaks(currentSpectrum);
-
-      this.updateGlobalEffects(this.volumeAccumulator);
-
-      // Update spectrum
-      for (let i = 0; i < this.NUM_BANDS; i++) {
-        this.smoothedSpectrum[i] = lerp(this.smoothedSpectrum[i], currentSpectrum[i], 0.3);
-      }
-
-      // Update visual elements
-      this.radialBands.forEach((band, i) => {
-        band.update(this.smoothedSpectrum[i], peak, this.globalSpeed, bassEnergy);
-      });
-
-      this.glowParticles.forEach(particle => {
-        particle.update(bassEnergy, this.globalSpeed, this.globalHue);
-      });
-
-      if (peak) {
-        const newParticlesCount = Math.min(5, MAX_PARTICLES - this.glowParticles.length);
-        for (let i = 0; i < newParticlesCount; i++) {
-          this.glowParticles.push(new GlowParticle());
-        }
-      }
-
-      while (this.glowParticles.length > MAX_PARTICLES) {
-        this.glowParticles.shift();
-      }    
-
-      this.audioBars.forEach((bar, i) => {
-        let index = floor(map(i, 0, this.audioBars.length, 0, currentSpectrum.length));
-        bar.updateSensitivity(currentSpectrum[index], bassEnergy, this.globalHue);
-      });
-
-      this.bassRing.update(highEnergy, bassEnergy, this.globalSpeed);
-
-      return {
-        bassEnergy,
-        currentSpectrum,
-        highEnergy
-      };
+    const currentSpectrum = fft.analyze();
+    const bassEnergy = fft.getEnergy("bass");
+    const highEnergy = fft.getEnergy("treble");
+    
+    const peak = this.detectPeaks(currentSpectrum);
+    
+    // Update kick detection
+    this.lastKickEnergy = this.kickEnergy;
+    this.kickEnergy = fft.getEnergy(50, 100);
+    const isKick = this.kickEnergy > this.kickThreshold && 
+                   this.kickEnergy > this.lastKickEnergy;
+    
+    // Update smoothed spectrum
+    for (let i = 0; i < this.NUM_BANDS; i++) {
+      this.smoothedSpectrum[i] = lerp(this.smoothedSpectrum[i], currentSpectrum[i], 0.3);
+    }
+    
+    // Update visualizations
+    this.radialBands.forEach((band, i) => {
+      band.update(this.smoothedSpectrum[i], peak, this.globalSpeed, this.kickEnergy);
+    });
+  
+    this.glowParticles.forEach(particle => {
+      particle.update(this.kickEnergy, this.globalSpeed, this.globalHue);
+    });
+  
+    this.audioBars.forEach((bar, i) => {
+      let index = floor(map(i, 0, this.audioBars.length, 0, currentSpectrum.length));
+      bar.updateSensitivity(currentSpectrum[index], this.kickEnergy, this.globalHue);
+    });
+  
+    this.bassRing.update(highEnergy, this.kickEnergy, this.globalSpeed);
+  
+    return {
+      bassEnergy,
+      kickEnergy: this.kickEnergy,
+      currentSpectrum,
+      highEnergy,
+      isKick
+    };
   }
-
+  
   draw(bassEnergy) {  // Add bassEnergy parameter
       // Central glow
       drawingContext.shadowBlur = map(bassEnergy, 0, 255, 30, 60);

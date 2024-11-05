@@ -54,14 +54,22 @@ function setup() {
   background(0);
 }
 
+// In sketch.js
+
 function draw() {
   if (!isSetupComplete) return;
 
   background(0, 0, 0, 0.2);
   translate(width / 2, height / 2);
 
-  const { bassEnergy } = vizManager.update(fft);
-  vizManager.draw(bassEnergy);
+  // Get all the updated values from vizManager
+  const { kickEnergy, currentSpectrum } = vizManager.update(fft);
+  
+  // Update global effects based on the spectrum
+  vizManager.updateGlobalEffects(currentSpectrum);
+  
+  // Draw everything
+  vizManager.draw(kickEnergy);
 
   drawDebugInfo();
 }
