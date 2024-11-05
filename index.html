@@ -4,12 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio Visualization</title>
-    <script>
-        // Add this before your script tag
-        document.write(`<script src="sketch.js?v=${Date.now()}"><\/script>`);
-    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+    <!-- Include constants.js before other scripts -->
+    <script src="js/utils/constants.js"></script>
+    <script src="js/utils/colorUtils.js"></script>
+    <script src="js/classes/RadialBand.js"></script>
+    <script src="js/classes/GlowParticle.js"></script>
+    <script src="js/classes/AudioBar.js"></script>
+    <script src="js/classes/BassRing.js"></script>
+    <script src="js/VisualizationManager.js"></script>
+    <script src="js/sketch.js"></script>
+
     <style>
         body {
             margin: 0;
@@ -59,6 +65,5 @@
             <button class="source-button" onclick="startWithMP3()">MP3 File</button>
         </div>
     </div>
-    <script src="sketch.js"></script>
 </body>
 </html>
