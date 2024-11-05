@@ -19,9 +19,25 @@ class VisualizationManager {
     this.globalSpeed = 1;
     this.volumeAccumulator = 0;
 
-    this.kickThreshold = 150;
-    this.kickEnergy = 0;
-    this.lastKickEnergy = 0;
+    // Kick detection properties
+    this.kickThreshold = 190;  // Current threshold
+    this.kickEnergy = 0;      // Current kick energy
+    this.lastKickEnergy = 0;  // Previous frame's kick energy
+    this.kickHistory = new Array(30).fill(0);  // Store recent kick energies
+    this.peakKickEnergy = 0;  // Highest kick energy seen
+    this.kickCount = 0;       // Number of kicks detected
+    this.lastKickTime = 0;    // Time of last kick
+    this.averageKickInterval = 0;  // Average time between kicks
+    this.lastKickIntervals = [];   // Store recent intervals between kicks
+
+    this.calibrationStartTime = null;
+    this.waitTimeBeforeCalibration = 40000; // 20 seconds in milliseconds
+    this.calibrationFrames = 0;
+    this.calibrationDuration = 200; // About 3-4 seconds of samples
+    this.isWaitingToCalibrate = true;
+    this.isCalibrating = false;
+    this.expectedBPM = 140; // Known BPM of the track
+    this.bpmTolerance = 5;  // Allow +/- 5 BPM variance
 
     this.initializeVisualElements();
   }
@@ -85,6 +101,75 @@ class VisualizationManager {
     this.volumeAccumulator = lerp(this.volumeAccumulator, average, 0.1);
   }  
 
+  calibrateKickThreshold(kickEnergy) {
+    const currentTime = millis();
+
+    // Wait 20 seconds before starting calibration
+    if (this.isWaitingToCalibrate) {
+      if (this.calibrationStartTime === null) {
+        this.calibrationStartTime = currentTime;
+      }
+
+      if (currentTime - this.calibrationStartTime < this.waitTimeBeforeCalibration) {
+        // During waiting period, still collect kick energy data
+        this.kickHistory.push(kickEnergy);
+        this.kickHistory.shift();
+        return this.kickThreshold;
+      } else {
+        this.isWaitingToCalibrate = false;
+        this.isCalibrating = true;
+        // Don't clear history, just start using it for calibration
+        this.calibrationFrames = 0;
+        return this.kickThreshold;
+      }
+    }
+
+    // Original calibration logic
+    if (this.calibrationFrames < this.calibrationDuration) {
+      this.kickHistory.push(kickEnergy);
+      this.kickHistory.shift();
+      this.calibrationFrames++;
+      return this.kickThreshold;
+    }
+
+    if (this.isCalibrating) {
+      // Sort energies to find natural breaks
+      const sortedEnergies = [...this.kickHistory].sort((a, b) => a - b);
+      const median = sortedEnergies[Math.floor(sortedEnergies.length / 2)];
+
+      // Find the largest gap in the upper half of energy values
+      let maxGap = 0;
+      let threshold = median;
+
+      for (let i = Math.floor(sortedEnergies.length * 0.5); i < sortedEnergies.length - 1; i++) {
+        const gap = sortedEnergies[i + 1] - sortedEnergies[i];
+        if (gap > maxGap) {
+          maxGap = gap;
+          threshold = sortedEnergies[i] + (gap * 0.3);
+        }
+      }
+
+      this.isCalibrating = false;
+      console.log('Calibration complete. New threshold:', threshold);
+      return threshold;
+    }
+
+    return this.kickThreshold;
+  }
+  
+  getCalibrationStatus() {
+      if (this.isWaitingToCalibrate) {
+          const timeLeft = Math.ceil((this.waitTimeBeforeCalibration - 
+              (millis() - this.calibrationStartTime)) / 1000);
+          return `Waiting to calibrate... ${timeLeft}s`;
+      }
+      if (this.isCalibrating) {
+          return `Calibrating... ${Math.floor((this.calibrationFrames / this.calibrationDuration) * 100)}%`;
+      }
+      return null;
+  }
+  
+
   update(fft) {
     const currentSpectrum = fft.analyze();
     const bassEnergy = fft.getEnergy("bass");
@@ -92,11 +177,47 @@ class VisualizationManager {
     
     const peak = this.detectPeaks(currentSpectrum);
     
-    // Update kick detection
+    // Enhanced kick detection
     this.lastKickEnergy = this.kickEnergy;
-    this.kickEnergy = fft.getEnergy(50, 100);
+    this.kickEnergy = fft.getEnergy(50, 100);  // Kick frequency range
+
+    this.kickThreshold = this.calibrateKickThreshold(this.kickEnergy);
+
+    // Update kick history
+    this.kickHistory.push(this.kickEnergy);
+    this.kickHistory.shift();
+
+    // Update peak energy
+    if (this.kickEnergy > this.peakKickEnergy) {
+        this.peakKickEnergy = this.kickEnergy;
+    }
+
+    // Calculate average kick energy
+    // Safe array reduction with initial value
+    const avgKickEnergy = this.kickHistory.length ? 
+      this.kickHistory.reduce((a, b) => a + b, 0) / this.kickHistory.length : 
+      0;
+
+    // Detect kick
     const isKick = this.kickEnergy > this.kickThreshold && 
                    this.kickEnergy > this.lastKickEnergy;
+
+    // Update kick timing data
+    if (isKick) {
+      const currentTime = millis();
+      if (this.lastKickTime > 0) {
+        const interval = currentTime - this.lastKickTime;
+        this.lastKickIntervals.push(interval);
+        if (this.lastKickIntervals.length > 10) {
+          this.lastKickIntervals.shift();
+        }
+        this.averageKickInterval = this.lastKickIntervals.length ?
+          this.lastKickIntervals.reduce((a, b) => a + b, 0) / this.lastKickIntervals.length :
+          429; // Default to ~140 BPM
+      }
+      this.lastKickTime = currentTime;
+      this.kickCount++;
+    }
     
     // Update smoothed spectrum
     for (let i = 0; i < this.NUM_BANDS; i++) {
@@ -124,7 +245,17 @@ class VisualizationManager {
       kickEnergy: this.kickEnergy,
       currentSpectrum,
       highEnergy,
-      isKick
+      isKick,
+      kickStats: {
+          currentEnergy: this.kickEnergy,
+          threshold: this.kickThreshold,
+          peakEnergy: this.peakKickEnergy,
+          averageEnergy: avgKickEnergy,
+          isKick: isKick,
+          kickCount: this.kickCount,
+          averageInterval: this.averageKickInterval,
+          recentHistory: [...this.kickHistory].slice(-5)  // Last 5 values
+      }
     };
   }
   
@@ -161,7 +292,19 @@ class VisualizationManager {
     return {
       speed: this.globalSpeed.toFixed(2),
       volume: this.volumeAccumulator.toFixed(2),
-      hue: Math.floor(this.globalHue)
+      hue: Math.floor(this.globalHue),
+      kick: {
+        current: Math.floor(this.kickEnergy),
+        threshold: Math.floor(this.kickThreshold),
+        peak: Math.floor(this.peakKickEnergy),
+        average: Math.floor(this.kickHistory.reduce((a, b) => a + b, 0) / 
+                          (this.kickHistory.length || 1)),
+        count: this.kickCount,
+        bpm: this.averageKickInterval ? 
+          Math.floor(60000 / this.averageKickInterval) : 
+          140,
+        recent: this.kickHistory.slice(-5).map(v => Math.floor(v))
+      }
     };
   }
 }

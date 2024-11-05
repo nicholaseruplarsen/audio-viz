@@ -76,14 +76,51 @@ function draw() {
 
 function drawDebugInfo() {
   const debugInfo = vizManager.getDebugInfo();
+  const kick = debugInfo.kick;
+  const calibrationStatus = vizManager.getCalibrationStatus();
 
   push();
   translate(-width / 2, -height / 2);
   fill(255);
   noStroke();
+
+  // Original info
   text(`Speed: ${debugInfo.speed}x`, 20, 20);
   text(`Volume: ${debugInfo.volume}`, 20, 40);
   text(`Hue: ${debugInfo.hue}°`, 20, 60);
+  
+  // Kick detection info
+  text('KICK INFO:', 20, 100);
+  text(`Current Energy: ${kick.current}`, 20, 120);
+  text(`Threshold: ${kick.threshold}`, 20, 140);
+  text(`Peak Energy: ${kick.peak}`, 20, 160);
+  text(`Average Energy: ${kick.average}`, 20, 180);
+  text(`Kick Count: ${kick.count}`, 20, 200);
+  text(`Estimated BPM: ${kick.bpm}`, 20, 220);
+  text(`Recent Energies: ${kick.recent.join(', ')}`, 20, 240);
+  
+  // Visual kick energy meter
+  const meterWidth = 200;
+  const meterHeight = 20;
+  noFill();
+  stroke(255);
+  rect(20, 260, meterWidth, meterHeight);
+  
+  // Current energy level
+  fill(255);
+  const energyWidth = map(kick.current, 0, max(kick.peak, kick.threshold * 1.5), 0, meterWidth);
+  rect(20, 260, energyWidth, meterHeight);
+  
+  // Threshold line
+  stroke(255, 0, 0);
+  const thresholdX = map(kick.threshold, 0, max(kick.peak, kick.threshold * 1.5), 0, meterWidth);
+  line(20 + thresholdX, 260, 20 + thresholdX, 260 + meterHeight);
+  
+  if (calibrationStatus) {
+      fill(255, 255, 0); // Yellow color for calibration status
+      text(calibrationStatus, 20, 280);
+  }
+
   pop();
 }
 
